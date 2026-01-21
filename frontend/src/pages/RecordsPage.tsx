@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, CellValueChangedEvent, GridReadyEvent, GridApi } from 'ag-grid-community';
+import type { ColDef, CellValueChangedEvent, GridReadyEvent, GridApi, PaginationChangedEvent, SortChangedEvent } from 'ag-grid-community';
 // AG Grid styles - required for v31
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
@@ -8,17 +8,37 @@ import 'ag-grid-community/styles/ag-theme-quartz.css';
 import { useAuth } from '../hooks/useAuth';
 import useRecords from '../hooks/useRecords';
 import useDropdownOptions from '../hooks/useDropdownOptions';
+import MultiSelectCellEditor from '../components/MultiSelectCellEditor';
 import type { RecordRowData, RecordFormData } from '../types';
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 10;
 
 function RecordsPage() {
   const { canEdit } = useAuth();
-  const { records, isLoading, error, createRecord, updateRecord, deleteRecord, refetch } = useRecords();
+  const { records, isLoading, error, pagination, fetchRecords, createRecord, updateRecord, deleteRecord, refetch } = useRecords();
   const { singleSelectOptions, multiSelectOptions, isLoading: optionsLoading } = useDropdownOptions();
   
   const gridRef = useRef<AgGridReact>(null);
-  const [, setGridApi] = useState<GridApi | null>(null);
+  const [gridApi, setGridApi] = useState<GridApi | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [sortField, setSortField] = useState<string>('id');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Fetch records when pagination/sort changes
+  useEffect(() => {
+    fetchRecords({
+      page: currentPage,
+      perPage: pageSize,
+      sortField,
+      sortOrder,
+    });
+  }, [fetchRecords, currentPage, pageSize, sortField, sortOrder]);
 
   // Transform records to row data format - memoized for performance
   const rowData: RecordRowData[] = useMemo(() => {
@@ -35,15 +55,6 @@ function RecordsPage() {
       updated_at: record.updated_at,
     }));
   }, [records]);
-
-  // Memoized dropdown values for cell editors
-  const singleSelectValues = useMemo(() => {
-    return singleSelectOptions.map(opt => opt.label);
-  }, [singleSelectOptions]);
-
-  const multiSelectValues = useMemo(() => {
-    return multiSelectOptions.map(opt => opt.label);
-  }, [multiSelectOptions]);
 
   // Helper functions for converting between labels and IDs
   const getSingleSelectIdFromLabel = useCallback((label: string): number | null => {
@@ -90,7 +101,7 @@ function RecordsPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save changes';
       setSaveError(message);
-      refetch(); // Refresh to revert changes
+      refetch();
     } finally {
       setIsSaving(false);
     }
@@ -111,6 +122,8 @@ function RecordsPage() {
       };
 
       await createRecord(newRecordData);
+      // Go to first page to see the new record
+      setCurrentPage(1);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create record';
       setSaveError(message);
@@ -138,6 +151,29 @@ function RecordsPage() {
     }
   }, [canEdit, deleteRecord]);
 
+  // Handle sort change from AG Grid
+  const onSortChanged = useCallback((event: SortChangedEvent) => {
+    const columnState = event.api.getColumnState();
+    const sortedColumn = columnState.find(col => col.sort);
+    
+    if (sortedColumn) {
+      // Map AG Grid column IDs to backend field names
+      const fieldMap: Record<string, string> = {
+        'id': 'id',
+        'text_field': 'text_field',
+        'created_at': 'created_at',
+        'updated_at': 'updated_at',
+      };
+      
+      const backendField = fieldMap[sortedColumn.colId];
+      if (backendField) {
+        setSortField(backendField);
+        setSortOrder(sortedColumn.sort as 'asc' | 'desc');
+        setCurrentPage(1); // Reset to first page on sort change
+      }
+    }
+  }, []);
+
   // Column definitions - memoized for performance
   const columnDefs: ColDef<RecordRowData>[] = useMemo(() => {
     const cols: ColDef<RecordRowData>[] = [
@@ -147,7 +183,7 @@ function RecordsPage() {
         width: 80,
         editable: false,
         sortable: true,
-        filter: true,
+        filter: false,
       },
       {
         headerName: 'Text Field',
@@ -156,19 +192,19 @@ function RecordsPage() {
         minWidth: 200,
         editable: canEdit,
         sortable: true,
-        filter: true,
+        filter: false,
       },
       {
         headerName: 'Single Select',
         field: 'single_select_label',
         width: 180,
         editable: canEdit,
-        sortable: true,
-        filter: true,
+        sortable: false,
+        filter: false,
         cellEditor: 'agSelectCellEditor',
-        cellEditorParams: {
-          values: singleSelectValues,
-        },
+        cellEditorParams: () => ({
+          values: singleSelectOptions.map(opt => opt.label),
+        }),
       },
       {
         headerName: 'Multi Select',
@@ -176,14 +212,13 @@ function RecordsPage() {
         flex: 1,
         minWidth: 200,
         editable: canEdit,
-        sortable: true,
-        filter: true,
-        cellEditor: 'agSelectCellEditor',
-        cellEditorParams: {
-          values: ['', ...multiSelectValues, ...multiSelectValues.flatMap((val, i, arr) => 
-            arr.slice(i + 1).map(other => `${val}, ${other}`)
-          )].filter(Boolean),
-        },
+        sortable: false,
+        filter: false,
+        cellEditor: MultiSelectCellEditor,
+        cellEditorParams: () => ({
+          options: multiSelectOptions,
+        }),
+        cellEditorPopup: true,
         valueFormatter: (params) => params.value || '',
       },
     ];
@@ -214,7 +249,7 @@ function RecordsPage() {
     }
 
     return cols;
-  }, [canEdit, singleSelectValues, multiSelectValues, handleDeleteRecord]);
+  }, [canEdit, singleSelectOptions, multiSelectOptions, handleDeleteRecord]);
 
   // Grid ready handler
   const onGridReady = useCallback((params: GridReadyEvent) => {
@@ -226,13 +261,59 @@ function RecordsPage() {
     resizable: true,
   }), []);
 
-  // Loading state
-  if (isLoading || optionsLoading) {
+  // Calculate pagination info
+  const totalPages = pagination?.last_page || 1;
+  const totalRecords = pagination?.total || 0;
+  const fromRecord = pagination?.from || 0;
+  const toRecord = pagination?.to || 0;
+
+  // Pagination handlers
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1); // Reset to first page
+  };
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
+
+  // Initial loading state (before first fetch)
+  if (optionsLoading) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white" />
-          <p className="text-white/70">Loading records...</p>
+          <p className="text-white/70">Loading...</p>
         </div>
       </div>
     );
@@ -266,7 +347,7 @@ function RecordsPage() {
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Records</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {records.length} total records
+            {totalRecords} total records
             {!canEdit && ' • Read-only mode'}
           </p>
         </div>
@@ -278,19 +359,20 @@ function RecordsPage() {
             </div>
           )}
           
-          {isSaving && (
+          {(isSaving || isLoading) && (
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <div className="w-4 h-4 border-2 border-gray-300 border-t-sky-600 rounded-full animate-spin" />
-              Saving...
+              {isSaving ? 'Saving...' : 'Loading...'}
             </div>
           )}
 
           <button
             onClick={refetch}
-            className="bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg border border-gray-300 transition-all duration-200 flex items-center gap-2"
+            disabled={isLoading}
+            className="bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg border border-gray-300 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
             title="Refresh records"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             Refresh
@@ -313,7 +395,7 @@ function RecordsPage() {
 
       {/* AG Grid Table */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="ag-theme-quartz" style={{ height: 600, width: '100%' }}>
+        <div className="ag-theme-quartz" style={{ height: 500, width: '100%' }}>
           <AgGridReact
             ref={gridRef}
             rowData={rowData}
@@ -321,12 +403,106 @@ function RecordsPage() {
             defaultColDef={defaultColDef}
             onGridReady={onGridReady}
             onCellValueChanged={onCellValueChanged}
+            onSortChanged={onSortChanged}
             animateRows={true}
             rowSelection="single"
             suppressRowClickSelection={true}
             stopEditingWhenCellsLoseFocus={true}
             singleClickEdit={canEdit}
+            loading={isLoading}
           />
+        </div>
+        
+        {/* Custom Pagination Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 border-t border-gray-200 bg-gray-50">
+          {/* Page size selector */}
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Show</span>
+            <select
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+            >
+              {PAGE_SIZE_OPTIONS.map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <span>per page</span>
+          </div>
+
+          {/* Record info */}
+          <div className="text-sm text-gray-600">
+            Showing {fromRecord} to {toRecord} of {totalRecords} records
+          </div>
+
+          {/* Page navigation */}
+          <div className="flex items-center gap-1">
+            {/* First page */}
+            <button
+              onClick={() => goToPage(1)}
+              disabled={currentPage === 1}
+              className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="First page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+            </button>
+
+            {/* Previous page */}
+            <button
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Previous page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            {/* Page numbers */}
+            {getPageNumbers().map((page, index) => (
+              <button
+                key={index}
+                onClick={() => typeof page === 'number' && goToPage(page)}
+                disabled={page === '...'}
+                className={`min-w-[32px] h-8 px-2 rounded-md text-sm font-medium transition-colors ${
+                  page === currentPage
+                    ? 'bg-sky-600 text-white'
+                    : page === '...'
+                    ? 'cursor-default'
+                    : 'hover:bg-gray-200'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+
+            {/* Next page */}
+            <button
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Next page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {/* Last page */}
+            <button
+              onClick={() => goToPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Last page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -341,7 +517,7 @@ function RecordsPage() {
             </li>
             <li className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-sky-500 rounded-full" />
-              Use dropdowns to select single or multi-select options
+              Click column headers to sort (ID and Text Field)
             </li>
             <li className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-sky-500 rounded-full" />

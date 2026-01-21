@@ -1,12 +1,35 @@
 import api from './api';
 import type { ApiResponse, PaginatedResponse, Record, RecordFormData } from '../types';
 
+export interface GetRecordsParams {
+  page?: number;
+  perPage?: number;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+  search?: string;
+}
+
 export const recordsService = {
   /**
-   * Get all records with pagination
+   * Get records with pagination, sorting, and filtering
    */
-  async getRecords(page = 1, perPage = 100): Promise<PaginatedResponse<Record>> {
-    return api.get<PaginatedResponse<Record>>('/records', { page, per_page: perPage });
+  async getRecords(params: GetRecordsParams = {}): Promise<PaginatedResponse<Record>> {
+    const { page = 1, perPage = 15, sortField, sortOrder, search } = params;
+    const queryParams: globalThis.Record<string, unknown> = { 
+      page, 
+      per_page: perPage 
+    };
+    
+    if (sortField) {
+      queryParams.sort_field = sortField;
+      queryParams.sort_order = sortOrder || 'asc';
+    }
+    
+    if (search) {
+      queryParams.search = search;
+    }
+    
+    return api.get<PaginatedResponse<Record>>('/records', queryParams);
   },
 
   /**

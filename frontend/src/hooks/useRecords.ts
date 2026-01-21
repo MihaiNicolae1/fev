@@ -1,32 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
-import recordsService from '../services/records';
-import type { Record, RecordFormData } from '../types';
+import { useState, useCallback, useRef } from 'react';
+import recordsService, { GetRecordsParams } from '../services/records';
+import type { Record, RecordFormData, PaginationMeta } from '../types';
 
 interface UseRecordsReturn {
   records: Record[];
   isLoading: boolean;
   error: string | null;
-  totalRecords: number;
-  refetch: () => Promise<void>;
+  pagination: PaginationMeta | null;
+  fetchRecords: (params?: GetRecordsParams) => Promise<void>;
   createRecord: (data: RecordFormData) => Promise<Record>;
   updateRecord: (id: number, data: Partial<RecordFormData>) => Promise<Record>;
   deleteRecord: (id: number) => Promise<void>;
+  refetch: () => Promise<void>;
 }
 
 export function useRecords(): UseRecordsReturn {
   const [records, setRecords] = useState<Record[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [totalRecords, setTotalRecords] = useState(0);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  
+  // Store last params for refetch
+  const lastParamsRef = useRef<GetRecordsParams>({});
 
-  const fetchRecords = useCallback(async () => {
+  const fetchRecords = useCallback(async (params: GetRecordsParams = {}) => {
     setIsLoading(true);
     setError(null);
+    lastParamsRef.current = params;
     
     try {
-      const response = await recordsService.getRecords(1, 1000);
+      const response = await recordsService.getRecords(params);
       setRecords(response.data);
-      setTotalRecords(response.meta.total);
+      setPagination(response.meta);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch records';
       setError(message);
@@ -36,16 +41,16 @@ export function useRecords(): UseRecordsReturn {
     }
   }, []);
 
-  useEffect(() => {
-    fetchRecords();
+  const refetch = useCallback(async () => {
+    await fetchRecords(lastParamsRef.current);
   }, [fetchRecords]);
 
   const createRecord = useCallback(async (data: RecordFormData): Promise<Record> => {
     const newRecord = await recordsService.createRecord(data);
-    setRecords(prev => [newRecord, ...prev]);
-    setTotalRecords(prev => prev + 1);
+    // Refetch to update pagination correctly
+    await refetch();
     return newRecord;
-  }, []);
+  }, [refetch]);
 
   const updateRecord = useCallback(async (id: number, data: Partial<RecordFormData>): Promise<Record> => {
     const updatedRecord = await recordsService.updateRecord(id, data);
@@ -55,19 +60,20 @@ export function useRecords(): UseRecordsReturn {
 
   const deleteRecord = useCallback(async (id: number): Promise<void> => {
     await recordsService.deleteRecord(id);
-    setRecords(prev => prev.filter(r => r.id !== id));
-    setTotalRecords(prev => prev - 1);
-  }, []);
+    // Refetch to update pagination correctly
+    await refetch();
+  }, [refetch]);
 
   return {
     records,
     isLoading,
     error,
-    totalRecords,
-    refetch: fetchRecords,
+    pagination,
+    fetchRecords,
     createRecord,
     updateRecord,
     deleteRecord,
+    refetch,
   };
 }
 

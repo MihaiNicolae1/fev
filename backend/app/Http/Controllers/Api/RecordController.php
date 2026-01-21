@@ -2,16 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Pagination\Paginatable;
+use App\Http\Requests\IndexRecordsRequest;
 use App\Http\Requests\StoreRecordRequest;
 use App\Http\Requests\UpdateRecordRequest;
 use App\Http\Resources\RecordResource;
 use App\Models\Record;
 use App\Repositories\Contracts\RecordRepositoryInterface;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class RecordController extends BaseController
 {
+    use Paginatable;
+
     /**
      * @var RecordRepositoryInterface
      */
@@ -30,16 +33,23 @@ class RecordController extends BaseController
     /**
      * Display a listing of the records.
      *
-     * @param Request $request
+     * @param IndexRecordsRequest $request
      * @return JsonResponse
      */
-    public function index(Request $request): JsonResponse
+    public function index(IndexRecordsRequest $request): JsonResponse
     {
         // Authorize via policy
         $this->authorize('viewAny', Record::class);
 
-        $perPage = $request->get('per_page', 15);
-        $records = $this->recordRepository->getWithRelations($perPage);
+        // Build query with eager loading
+        $query = Record::with(['singleSelect', 'multiSelectOptions', 'creator']);
+
+        // Apply pagination, sorting, and search using the Paginatable trait
+        $records = $this->paginate(
+            $query,
+            $request->paginationParams(),
+            searchableFields: ['text_field']
+        );
 
         return $this->paginatedResponse(
             $records->through(fn($record) => new RecordResource($record)),

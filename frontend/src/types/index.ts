@@ -53,16 +53,20 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+export interface PaginationMeta {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number;
+  to: number;
+}
+
 export interface PaginatedResponse<T> {
   success: boolean;
   message: string;
   data: T[];
-  meta: {
-    current_page: number;
-    last_page: number;
-    per_page: number;
-    total: number;
-  };
+  meta: PaginationMeta;
 }
 
 export interface LoginResponse {
