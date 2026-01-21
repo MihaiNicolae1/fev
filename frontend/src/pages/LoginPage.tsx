@@ -54,7 +54,7 @@ function LoginPage() {
             Welcome Back
           </h1>
           <p className="text-white/70">
-            Sign in to access the Assessment App
+            Sign in to access your account
           </p>
         </div>
 
@@ -195,7 +195,7 @@ function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-white/50 text-sm mt-6">
-          Assessment Application &copy; {new Date().getFullYear()}
+          FEV &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

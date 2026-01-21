@@ -1,4 +1,4 @@
-# Assessment Application Makefile
+# FEV Application Makefile
 # Usage: make <target>
 
 .PHONY: help up down restart rebuild logs shell-backend shell-frontend shell-db \
@@ -6,7 +6,7 @@
 
 # Default target
 help:
-	@echo "Assessment Application - Available Commands"
+	@echo "FEV Application - Available Commands"
 	@echo "============================================"
 	@echo ""
 	@echo "Docker Commands:"
@@ -155,7 +155,7 @@ routes:
 
 test:
 	@echo "Running all tests..."
-	docker-compose exec -T backend php artisan test --parallel
+	docker-compose exec -T backend php artisan test
 	@echo "Tests completed!"
 
 test-unit:

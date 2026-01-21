@@ -1,7 +1,7 @@
 {
-    "name": "fev/assessment-backend",
+    "name": "fev/backend",
     "type": "project",
-    "description": "Laravel 9 Backend for Assessment Application",
+    "description": "Laravel 9 Backend API",
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {

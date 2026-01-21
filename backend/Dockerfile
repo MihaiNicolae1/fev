@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install PCOV for code coverage (faster than Xdebug)
+RUN pecl install pcov && docker-php-ext-enable pcov
+
 # Install Composer
 COPY --from=composer:2.5 /usr/bin/composer /usr/bin/composer
 

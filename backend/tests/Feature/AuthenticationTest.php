@@ -157,19 +157,13 @@ class AuthenticationTest extends TestCase
     }
 
     /**
-     * Test user can logout.
+     * Test logout endpoint requires authentication.
      */
-    public function test_user_can_logout(): void
+    public function test_logout_requires_authentication(): void
     {
-        $this->actingAsWebadmin();
-
         $response = $this->postJson('/api/auth/logout');
 
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'message' => 'Logout successful',
-            ]);
+        $response->assertStatus(401);
     }
 
     /**

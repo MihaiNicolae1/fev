@@ -32,6 +32,9 @@ abstract class TestCase extends BaseTestCase
         // Run migrations for testing
         Artisan::call('migrate:fresh');
 
+        // Install Passport (creates personal access client)
+        Artisan::call('passport:install', ['--no-interaction' => true]);
+
         // Seed required data
         $this->seedRolesAndPermissions();
     }

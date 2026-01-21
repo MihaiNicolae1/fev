@@ -39,7 +39,7 @@ function Navbar() {
             </div>
             <div>
               <h1 className="text-xl font-display font-semibold text-white">
-                Assessment App
+                FEV
               </h1>
               <p className="text-xs text-white/60">Data Management System</p>
             </div>
